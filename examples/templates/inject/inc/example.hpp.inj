@@ -1,0 +1,3 @@
+<!-- injection-pattern: rename-method-name -->
+\s*(?P<injection>print)\s*\(
+<!-- injection-string-start -->{{ dict_data.author }}<!-- injection-string-end -->
