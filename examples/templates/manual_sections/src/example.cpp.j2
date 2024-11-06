@@ -1,0 +1,25 @@
+#include "example.hpp"
+#include <iostream>
+
+// Project: {{ dict_data.project_name }}
+// Author: {{ dict_data.author }}
+
+namespace example
+{
+  NewExample::NewExample()
+  {
+    std::cout << "NewExample::NewExample()" << std::endl;
+    // MANUAL SECTION START: init-custom-variables
+    // MANUAL SECTION END
+  }
+
+  NewExample::~NewExample()
+  {
+    std::cout << "NewExample::~NewExample()" << std::endl;
+  }
+
+  void NewExample::run()
+  {
+    std::cout << "NewExample::run()" << std::endl;
+  }
+} // namespace example

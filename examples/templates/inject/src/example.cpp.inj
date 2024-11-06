@@ -1,0 +1,13 @@
+<!-- injection-pattern: add-missing-include -->
+// missing include: <iostream>(?P<injection>)
+<!-- injection-string-start -->
+#include <iostream>
+<!-- injection-string-end -->
+
+<!-- injection-pattern: rename-method-name -->
+::(?P<injection>print)\s*\(
+<!-- injection-string-start -->{{ dict_data.author }}<!-- injection-string-end -->
+
+<!-- injection-pattern: remove-print-statement -->
+(?P<injection>\s*std::cout.*Example::~Example().*?;)
+<!-- injection-string-start --><!-- injection-string-end -->
