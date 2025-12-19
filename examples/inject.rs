@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
-use templify::RenderHelper;
+use templify::{TemplateEngine, FileGenerator, ManualSectionManager, ManualSectionConfig};
 use env_logger;
 use std::env;
 use log::{info, error};
@@ -16,14 +16,10 @@ fn main() {
     data.insert("project_name", "Templify");
     data.insert("author", "robinbreast");
 
-    // Create a RenderHelper instance
-    let render_helper = match RenderHelper::new(data, None) {
-        Ok(helper) => helper,
-        Err(e) => {
-            error!("Failed to create RenderHelper: {}", e);
-            return;
-        }
-    };
+    // Initialize components
+    let engine = TemplateEngine::new();
+    let manual_section_manager = ManualSectionManager::new(ManualSectionConfig::default());
+    let generator = FileGenerator::new(engine, manual_section_manager, false);
 
     // Define paths for template and output files
     let template_path = Path::new("examples/templates/inject");
@@ -43,7 +39,7 @@ fn main() {
     }
 
     // Generate the output file from the template file
-    match render_helper.generate(template_path, output_path) {
+    match generator.generate(template_path, output_path, &data) {
         Ok(_) => info!("Files generated successfully in: {:?}", output_path),
         Err(e) => error!("{}", e),
     }

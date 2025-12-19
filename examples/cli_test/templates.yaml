@@ -1,0 +1,8 @@
+globals:
+  version: "1.0.0"
+
+templates:
+  - name: "Service Configs"
+    folder: "templates"
+    output: "output"
+    iterate: "service in services"

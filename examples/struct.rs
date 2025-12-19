@@ -1,8 +1,9 @@
 use std::path::Path;
-use templify::RenderHelper;
+use templify::{TemplateEngine, FileGenerator, ManualSectionManager, ManualSectionConfig};
 use env_logger;
 use std::env;
 use log::{info, error};
+use std::collections::HashMap;
 
 #[derive(serde::Serialize)]
 struct Person {
@@ -29,21 +30,21 @@ fn main() {
     // Create a Person instance
     let person = Person::new("John Doe");
 
-    // Create a RenderHelper instance
-    let render_helper = match RenderHelper::new(person, Some("person")) {
-        Ok(helper) => helper,
-        Err(e) => {
-            error!("Failed to create RenderHelper: {}", e);
-            return;
-        }
-    };
+    // Wrap in "person" key
+    let mut context = HashMap::new();
+    context.insert("person".to_string(), person);
+
+    // Initialize components
+    let engine = TemplateEngine::new();
+    let manual_section_manager = ManualSectionManager::new(ManualSectionConfig::default());
+    let generator = FileGenerator::new(engine, manual_section_manager, false);
 
     // Define paths for template and output files
     let template_path = Path::new("examples/templates/struct/template.j2");
     let output_folder = Path::new("output/struct");
 
     // Generate the output file from the template file
-    match render_helper.generate(template_path, output_folder) {
+    match generator.generate(template_path, output_folder, &context) {
         Ok(_) => info!("Files generated successfully in: {:?}", output_folder),
         Err(e) => error!("{}", e),
     }

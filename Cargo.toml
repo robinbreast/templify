@@ -1,6 +1,6 @@
 [package]
 name = "templify"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "File generation helper using a data dictionary and Jinja2 template files."
 license = "MIT"
@@ -9,14 +9,25 @@ repository = "https://github.com/robinbreast/templify"
 keywords = ["jinja", "jinja2", "j2", "template", "generator"]
 categories = ["template-engine"]
 
+[[bin]]
+name = "yagen"
+path = "src/main.rs"
+
+
 [dependencies]
 minijinja = "=2.6.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 regex = "1.5.4"
 log = "0.4"
+clap = { version = "4.4", features = ["derive"] }
+serde_yaml = "0.9"
+anyhow = "1.0"
+thiserror = "1.0"
+env_logger = "0.11"
+heck = "0.5"
+uuid = { version = "1.10", features = ["v4", "v5", "fast-rng", "macro-diagnostics"] }
 
 [dev-dependencies]
 tempfile = "3.2"
-env_logger = "0.11"
 fs_extra = "1"
