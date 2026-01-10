@@ -1,10 +1,10 @@
-use std::collections::HashMap;
-use std::path::Path;
-use templify::{TemplateEngine, FileGenerator, ManualSectionManager, ManualSectionConfig};
 use env_logger;
+use fs_extra::dir::{copy, remove, CopyOptions};
+use log::{error, info};
+use std::collections::HashMap;
 use std::env;
-use log::{info, error};
-use fs_extra::dir::{copy, CopyOptions, remove};
+use std::path::Path;
+use templify::{FileGenerator, ManualSectionConfig, ManualSectionManager, TemplateEngine};
 
 fn main() {
     // Initialize the logger with the desired logging level

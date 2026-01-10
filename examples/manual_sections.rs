@@ -1,10 +1,10 @@
-use std::collections::HashMap;
-use std::path::Path;
-use templify::{TemplateEngine, FileGenerator, ManualSectionManager, ManualSectionConfig};
 use env_logger;
+use fs_extra::dir::{copy, remove, CopyOptions};
+use log::{error, info};
+use std::collections::HashMap;
 use std::env;
-use log::{info, error};
-use fs_extra::dir::{copy, CopyOptions, remove};
+use std::path::Path;
+use templify::{FileGenerator, ManualSectionConfig, ManualSectionManager, TemplateEngine};
 
 fn main() {
     // Initialize the logger with the desired logging level
@@ -15,7 +15,7 @@ fn main() {
     let mut data = HashMap::new();
     data.insert("project_name", "Templify");
     data.insert("author", "robinbreast");
-    
+
     // No context wrapper needed as RenderHelper::new was called with None
 
     // Initialize components
@@ -35,7 +35,11 @@ fn main() {
     }
     let mut options = CopyOptions::new();
     options.copy_inside = true; // Recursively copy contents
-    if let Err(e) = copy("examples/targets/manual_sections", "output/manual_sections", &options) {
+    if let Err(e) = copy(
+        "examples/targets/manual_sections",
+        "output/manual_sections",
+        &options,
+    ) {
         error!("Failed to copy folder: {}", e);
         return;
     }

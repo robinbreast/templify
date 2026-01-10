@@ -1,10 +1,10 @@
-// In manual_sections.rs I can't easily add logging without importing log macros again if I missed them. 
+// In manual_sections.rs I can't easily add logging without importing log macros again if I missed them.
 // But I can try to add print statements for debugging since this is dev/test.
 // Or actually adduse regex::Regex;
-use regex::Regex;
 use crate::config::ManualSectionConfig;
-use std::collections::HashSet;
+use regex::Regex;
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 /// The regex pattern for manual section IDs.
 const MANUAL_SECTION_ID: &str = "[a-zA-Z0-9_-]+";
@@ -27,10 +27,10 @@ impl ManualSectionManager {
             MANUAL_SECTION_ID,
             regex::escape(&self.config.end_marker)
         );
-        
-        // We also need a pattern to find starts without matching the full block necessarily, 
+
+        // We also need a pattern to find starts without matching the full block necessarily,
         // but for preservation we iterate over full blocks in new_rendered.
-        
+
         let re = match Regex::new(&manual_section_pattern) {
             Ok(r) => r,
             Err(e) => {
@@ -98,7 +98,10 @@ impl ManualSectionManager {
         if !duplicates.is_empty() {
             // Find line number of first duplicate
             // This is a bit rough, assuming we just need to return error
-            return Err(format!("Duplicate manual section IDs in {:?}: {:?}", filename, duplicates));
+            return Err(format!(
+                "Duplicate manual section IDs in {:?}: {:?}",
+                filename, duplicates
+            ));
         }
         Ok(())
     }
@@ -119,7 +122,7 @@ impl ManualSectionManager {
         }
 
         // Check for nesting
-        // A simple way is to track depth. 
+        // A simple way is to track depth.
         // We find all start and end indices and sort them.
         let mut events = Vec::new();
         for (i, _) in content.match_indices(start_marker) {
@@ -156,21 +159,21 @@ impl ManualSectionManager {
         self.check_duplicates(rendered, template_path)?;
 
         if let Some(prev) = prev_rendered {
-             self.check_structure(prev, "existing file")?;
-             self.check_duplicates(prev, "existing file")?;
+            self.check_structure(prev, "existing file")?;
+            self.check_duplicates(prev, "existing file")?;
 
-             // Check for lost sections
-             let curr_ids: HashSet<_> = self.extract_section_ids(rendered).into_iter().collect();
-             let prev_ids = self.extract_section_ids(prev);
+            // Check for lost sections
+            let curr_ids: HashSet<_> = self.extract_section_ids(rendered).into_iter().collect();
+            let prev_ids = self.extract_section_ids(prev);
 
-             for id in prev_ids {
-                 if !curr_ids.contains(&id) {
-                     return Err(format!(
+            for id in prev_ids {
+                if !curr_ids.contains(&id) {
+                    return Err(format!(
                          "Manual section '{}' from existing file is missing in new template output for {:?}", 
                          id, template_path
                      ));
-                 }
-             }
+                }
+            }
         }
 
         Ok(())
@@ -185,7 +188,7 @@ impl ManualSectionManager {
             regex::escape(&self.config.end_marker)
         );
         let re = Regex::new(&pattern).unwrap();
-        
+
         let mut blocks = HashMap::new();
         for cap in re.captures_iter(content) {
             let full_block = cap.get(1).unwrap().as_str().to_string();

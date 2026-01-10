@@ -3,9 +3,10 @@ use regex::Regex;
 use serde::Serialize;
 use std::{fs, path::Path};
 
+use crate::config::FileFilters;
 use crate::engine::TemplateEngine;
-use crate::manual_sections::ManualSectionManager;
 use crate::formatting::FormatterManager;
+use crate::manual_sections::ManualSectionManager;
 
 /// The regex pattern for injection points.
 const INJECTION_PATTERN: &str = r"<!-- injection-pattern: (?P<name>[a-zA-Z0-9_-]+) -->";
@@ -32,7 +33,7 @@ impl FileGenerator {
             dry_run,
         }
     }
-    
+
     pub fn with_formatter(mut self, formatter_manager: FormatterManager) -> Self {
         self.formatter_manager = Some(formatter_manager);
         self
@@ -53,7 +54,24 @@ impl FileGenerator {
         output_path: &Path,
         context: &T,
     ) -> Result<(), String> {
-        self.generate_internal(template_path, output_path, context, true)
+        self.generate_filtered(template_path, output_path, context, &FileFilters::default())
+    }
+
+    pub fn generate_filtered<T: Serialize>(
+        &self,
+        template_path: &Path,
+        output_path: &Path,
+        context: &T,
+        filters: &FileFilters,
+    ) -> Result<(), String> {
+        self.generate_internal(
+            template_path,
+            output_path,
+            context,
+            true,
+            template_path,
+            filters,
+        )
     }
 
     /// Internal method to generate files from the specified template path to the output path.
@@ -63,6 +81,8 @@ impl FileGenerator {
         output_path: &Path,
         context: &T,
         root_path: bool,
+        root_template: &Path,
+        filters: &FileFilters,
     ) -> Result<(), String> {
         if !template_path.exists() {
             error!("Template file does not exist: {:?}", template_path);
@@ -73,18 +93,67 @@ impl FileGenerator {
             Self::ensure_dir_exists(output_path)?;
         }
 
+        // Inject output_dir into context if possible
+        // Note: Generic T context cannot be easily mutated here.
+        // We rely on the caller to have added 'globals' -> 'output_dir' if needed, or we assume context has it.
+        // HOWEVER, standard behavior in pytemplify is that the generator adds it.
+        // Since T is generic Serialize, we can't easily add to it unless it's a Value.
+        // For now, we proceed. Ideally, we should wrap context or use serde_json::Value.
+
+        let context_value = serde_json::to_value(context).map_err(|e| e.to_string())?;
+
         if template_path.is_file() {
+            if should_skip_file(template_path, root_template, filters) {
+                return Ok(());
+            }
+
             let filename = template_path.file_name().unwrap().to_str().unwrap();
-            let filename = filename
+
+            // 1. Strip _foreach_ prefix if applicable
+            let filename = self.strip_foreach_prefix(filename, &context_value);
+
+            // 2. Render filename (Smart Filtering)
+            // Smart Filtering: If rendering fails due to missing variable, skip file.
+            let rendered_filename = match self.engine.render_string(&filename, context) {
+                Ok(s) => s,
+                Err(e) => {
+                    // Basic heuristic: check if error is about undefined variable
+                    // minijinja errors usually look like "undefined value: ..."
+                    if e.contains("undefined value") {
+                        info!(
+                            "Skipping file '{}' due to undefined variable in filename: {}",
+                            filename, e
+                        );
+                        return Ok(());
+                    }
+                    return Err(e);
+                }
+            };
+
+            let filename = rendered_filename
                 .strip_suffix(".j2")
-                .or_else(|| filename.strip_suffix(".inj"))
-                .unwrap_or(filename);
-            let rendered_filename = self.engine.render_string(filename, context)?;
-            let new_output_path = output_path.join(rendered_filename);
+                .or_else(|| rendered_filename.strip_suffix(".inj"))
+                .unwrap_or(&rendered_filename);
+
+            let new_output_path = output_path.join(filename);
             self.generate_file(template_path, &new_output_path, context)?;
         } else {
             let folder_name = template_path.file_name().unwrap().to_str().unwrap();
-            let rendered_folder_name = self.engine.render_string(folder_name, context)?;
+            // Smart Filtering for folders too
+            let rendered_folder_name = match self.engine.render_string(folder_name, context) {
+                Ok(s) => s,
+                Err(e) => {
+                    if e.contains("undefined value") {
+                        info!(
+                            "Skipping folder '{}' due to undefined variable in name: {}",
+                            folder_name, e
+                        );
+                        return Ok(());
+                    }
+                    return Err(e);
+                }
+            };
+
             let new_output_path = if root_path {
                 output_path.to_path_buf()
             } else {
@@ -99,10 +168,46 @@ impl FileGenerator {
                     e.to_string()
                 })?;
                 let path = entry.path();
-                self.generate_internal(&path, &new_output_path, context, false)?;
+                self.generate_internal(
+                    &path,
+                    &new_output_path,
+                    context,
+                    false,
+                    root_template,
+                    filters,
+                )?;
             }
         }
         Ok(())
+    }
+
+    fn strip_foreach_prefix(&self, filename: &str, context: &serde_json::Value) -> String {
+        if !filename.starts_with("_foreach_") {
+            return filename.to_string();
+        }
+
+        // e.g. _foreach_model_service.txt.j2 -> model
+        let parts: Vec<&str> = filename.split('_').collect();
+        if parts.len() < 4 {
+            // "", "foreach", "var", "rest..."
+            return filename.to_string();
+        }
+
+        let var_name = parts[2];
+
+        // Check if context has var_name
+        // context is likely a map
+        if let Some(obj) = context.as_object() {
+            if obj.contains_key(var_name) {
+                // Remove prefix "_foreach_{var}_"
+                let prefix = format!("_foreach_{}_", var_name);
+                if filename.starts_with(&prefix) {
+                    return filename[prefix.len()..].to_string();
+                }
+            }
+        }
+
+        filename.to_string()
     }
 
     /// Generates a file from the specified template path to the output path.
@@ -137,23 +242,25 @@ impl FileGenerator {
         if let Some(ext) = template_path.extension() {
             if ext == "j2" {
                 let rendered_content = self.engine.render_file(template_path, context)?;
-                
+
                 // Validate manual sections
                 self.manual_section_manager.validate_sections(
-                    template_path.to_str().unwrap_or("template"), 
-                    &rendered_content, 
-                    prev_rendered_string.as_deref()
+                    template_path.to_str().unwrap_or("template"),
+                    &rendered_content,
+                    prev_rendered_string.as_deref(),
                 )?;
 
                 let mut final_content = if let Some(prev) = prev_rendered_string.as_deref() {
-                    self.manual_section_manager.preserve_sections(&rendered_content, prev)
+                    self.manual_section_manager
+                        .preserve_sections(&rendered_content, prev)
                 } else {
                     rendered_content
                 };
-                
+
                 // Format content
                 if let Some(fmt) = &self.formatter_manager {
-                    final_content = fmt.format_content(&final_content, output_path.to_str().unwrap_or(""));
+                    final_content =
+                        fmt.format_content(&final_content, output_path.to_str().unwrap_or(""));
                 }
 
                 if self.dry_run {
@@ -171,7 +278,7 @@ impl FileGenerator {
             } else if ext == "inj" && prev_rendered_string.is_some() {
                 let injected_content =
                     self.inject_string(template_path, prev_rendered_string.as_deref(), context)?;
-                
+
                 if self.dry_run {
                     info!("[DRY RUN] Would inject: {:?}", output_path);
                 } else {
@@ -285,4 +392,51 @@ impl FileGenerator {
         }
         Ok(rendered_string)
     }
+}
+
+fn should_skip_file(path: &Path, root_template: &Path, filters: &FileFilters) -> bool {
+    if filters.include.is_empty() && filters.exclude.is_empty() {
+        return false;
+    }
+
+    let rel = path.strip_prefix(root_template).unwrap_or(path);
+    let rel_str = rel.to_string_lossy();
+
+    if !filters.include.is_empty() {
+        let mut matched = false;
+        for pattern in &filters.include {
+            if matches_pattern(&rel_str, pattern) {
+                matched = true;
+                break;
+            }
+        }
+        if !matched {
+            return true;
+        }
+    }
+
+    for pattern in &filters.exclude {
+        if matches_pattern(&rel_str, pattern) {
+            return true;
+        }
+    }
+
+    false
+}
+
+fn matches_pattern(name: &str, pattern: &str) -> bool {
+    if let Some(regex_pattern) = pattern.strip_prefix("regex:") {
+        if let Ok(re) = Regex::new(regex_pattern) {
+            return re.is_match(name);
+        }
+    }
+
+    if pattern.contains('*') {
+        let parts: Vec<&str> = pattern.split('*').collect();
+        if parts.len() == 2 {
+            return name.starts_with(parts[0]) && name.ends_with(parts[1]);
+        }
+    }
+
+    name == pattern
 }

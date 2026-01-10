@@ -1,11 +1,11 @@
 // Export public modules
 pub mod config;
 pub mod engine;
+pub mod filters;
+pub mod formatting;
 pub mod generator;
 pub mod iteration;
 pub mod manual_sections;
-pub mod filters;
-pub mod formatting;
 
 // Re-export commonly used types
 pub use config::{ManualSectionConfig, TemplateConfig};
@@ -21,7 +21,10 @@ use std::path::Path;
 
 /// Legacy RenderHelper for backward compatibility.
 /// This is a facade that wraps the new architecture.
-#[deprecated(since = "0.2.0", note = "Use TemplateEngine and FileGenerator directly")]
+#[deprecated(
+    since = "0.2.0",
+    note = "Use TemplateEngine and FileGenerator directly"
+)]
 pub struct RenderHelper {
     generator: FileGenerator,
     context: serde_json::Value,
@@ -48,6 +51,7 @@ impl RenderHelper {
 
     /// Generates files from the specified template path to the output path.
     pub fn generate(&self, template_path: &Path, output_path: &Path) -> Result<(), String> {
-        self.generator.generate(template_path, output_path, &self.context)
+        self.generator
+            .generate(template_path, output_path, &self.context)
     }
 }

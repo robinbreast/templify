@@ -1,3 +1,4 @@
+use jsonschema::JSONSchema;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -9,19 +10,35 @@ pub struct TemplateConfig {
     pub templates: Vec<TemplateSet>,
     #[serde(default = "default_flatten_data")]
     pub flatten_data: bool,
-    
+
     #[serde(default)]
     pub manual_sections: ManualSectionConfig,
 
     #[serde(default)]
     pub extra_data: Vec<ExtraDataConfig>,
-    
+
+    #[serde(default)]
+    pub helpers: Vec<HelperConfig>,
+
     #[serde(default)]
     pub format: FormatConfig,
+
+    #[serde(default)]
+    pub jinja_env: JinjaEnvConfig,
+
+    pub schema: Option<String>,
 }
 
 fn default_flatten_data() -> bool {
     true
+}
+
+fn default_required_true() -> bool {
+    true
+}
+
+fn default_auto_format() -> String {
+    "auto".to_string()
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -41,6 +58,25 @@ impl Default for ManualSectionConfig {
     }
 }
 
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct JinjaEnvConfig {
+    #[serde(default)]
+    pub trim_blocks: bool,
+    #[serde(default)]
+    pub lstrip_blocks: bool,
+    #[serde(default)]
+    pub autoescape: bool,
+    #[serde(default = "default_keep_trailing_newline")]
+    pub keep_trailing_newline: bool,
+    pub newline_sequence: Option<String>,
+    pub line_statement_prefix: Option<String>,
+    pub line_comment_prefix: Option<String>,
+}
+
+fn default_keep_trailing_newline() -> bool {
+    true
+}
+
 fn default_manual_start() -> String {
     "MANUAL SECTION START".to_string()
 }
@@ -50,11 +86,38 @@ fn default_manual_end() -> String {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct ExtraDataConfig {
+#[serde(untagged)]
+pub enum ExtraDataConfig {
+    File(FileExtraDataConfig),
+    Inline(InlineExtraDataConfig),
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct FileExtraDataConfig {
     pub key: String,
     pub path: String,
-    #[serde(default)]
+    #[serde(default = "default_required_true")]
     pub required: bool,
+    #[serde(default = "default_auto_format")]
+    pub format: String,
+    pub schema: Option<String>,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct InlineExtraDataConfig {
+    pub key: String,
+    pub value: serde_json::Value,
+    pub schema: Option<String>,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct HelperConfig {
+    pub key: String,
+    pub path: String,
+    #[serde(default = "default_auto_format")]
+    pub format: String,
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
@@ -105,9 +168,26 @@ pub struct TemplateSet {
     pub name: Option<String>,
     pub folder: String,
     pub output: Option<String>,
-    pub iterate: Option<String>, // "item in items"
+    pub iterate: Option<IterationSpec>,
     #[serde(default = "default_enabled")]
     pub enabled: bool,
+    #[serde(default)]
+    pub files: FileFilters,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum IterationSpec {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+#[derive(Debug, Deserialize, Default, Clone)]
+pub struct FileFilters {
+    #[serde(default)]
+    pub include: Vec<String>,
+    #[serde(default)]
+    pub exclude: Vec<String>,
 }
 
 fn default_enabled() -> bool {
@@ -128,14 +208,45 @@ pub enum ConfigError {
     Yaml(#[from] serde_yaml::Error),
     #[error("Invalid iteration syntax: {0}")]
     InvalidIteration(String),
+    #[error("Schema validation failed: {0}")]
+    Schema(String),
 }
 
 impl TemplateConfig {
     pub fn load(path: &Path) -> Result<Self, ConfigError> {
         let content = std::fs::read_to_string(path)?;
-        let config: TemplateConfig = serde_yaml::from_str(&content)?;
+        let raw: serde_yaml::Value = serde_yaml::from_str(&content)?;
+
+        if let Some(schema_path) = raw.get("schema").and_then(|v| v.as_str()) {
+            let schema_full = path.parent().unwrap_or(Path::new(".")).join(schema_path);
+            let raw_json =
+                serde_json::to_value(&raw).map_err(|e| ConfigError::Schema(e.to_string()))?;
+            validate_against_schema(&raw_json, &schema_full)?;
+        }
+
+        let config: TemplateConfig = serde_yaml::from_value(raw)?;
         Ok(config)
     }
+}
+
+fn validate_against_schema(
+    value: &serde_json::Value,
+    schema_path: &Path,
+) -> Result<(), ConfigError> {
+    let schema_str =
+        std::fs::read_to_string(schema_path).map_err(|e| ConfigError::Schema(e.to_string()))?;
+    let schema_json: serde_json::Value =
+        serde_json::from_str(&schema_str).map_err(|e| ConfigError::Schema(e.to_string()))?;
+
+    let leaked: &'static serde_json::Value = Box::leak(Box::new(schema_json));
+    let compiled = JSONSchema::compile(leaked).map_err(|e| ConfigError::Schema(e.to_string()))?;
+
+    if let Err(errs) = compiled.validate(value) {
+        let msgs: Vec<String> = errs.map(|e| e.to_string()).collect();
+        return Err(ConfigError::Schema(msgs.join(", ")));
+    }
+
+    Ok(())
 }
 
 // Moved parse_iteration logic to iteration.rs, but keeping a stub or moving it entirely?

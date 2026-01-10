@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use std::path::Path;
-use templify::{TemplateEngine, FileGenerator, ManualSectionManager, ManualSectionConfig};
 use env_logger;
+use log::{error, info};
+use std::collections::HashMap;
 use std::env;
-use log::{info, error};
+use std::path::Path;
+use templify::{FileGenerator, ManualSectionConfig, ManualSectionManager, TemplateEngine};
 
 fn main() {
     // Initialize the logger with the desired logging level
