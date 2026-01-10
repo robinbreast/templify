@@ -301,3 +301,101 @@ impl FormatterManager {
         format!("{{{}}}", parts.join(", "))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{FormatConfig, FormatDefaults, FormatterConfig, ManualSectionConfig};
+    use std::collections::HashMap;
+
+    fn new_manager(config: FormatConfig) -> FormatterManager {
+        let manual_section_manager = ManualSectionManager::new(ManualSectionConfig::default());
+        FormatterManager::new(config, manual_section_manager)
+    }
+
+    #[test]
+    fn test_format_content_disabled() {
+        let manager = new_manager(FormatConfig {
+            enabled: false,
+            ..FormatConfig::default()
+        });
+        let result = manager.format_content("hello", "file.txt");
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn test_format_content_ignored_pattern() {
+        let mut formatters = HashMap::new();
+        formatters.insert(
+            "*.rs".to_string(),
+            FormatterConfig {
+                formatter_type: "command".to_string(),
+                command: Some("cat".to_string()),
+                args: None,
+                options: HashMap::new(),
+                enabled: true,
+            },
+        );
+
+        let manager = new_manager(FormatConfig {
+            enabled: true,
+            formatters,
+            defaults: FormatDefaults {
+                ignore_patterns: vec!["*.rs".to_string()],
+                preserve_manual_sections: true,
+            },
+        });
+
+        let result = manager.format_content("hello", "main.rs");
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn test_format_content_runs_command() {
+        let mut formatters = HashMap::new();
+        formatters.insert(
+            "*.txt".to_string(),
+            FormatterConfig {
+                formatter_type: "command".to_string(),
+                command: Some("cat".to_string()),
+                args: None,
+                options: HashMap::new(),
+                enabled: true,
+            },
+        );
+
+        let manager = new_manager(FormatConfig {
+            enabled: true,
+            formatters,
+            defaults: FormatDefaults::default(),
+        });
+
+        let result = manager.format_content("hello", "file.txt");
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn test_matches_pattern_regex_and_wildcards() {
+        let manager = new_manager(FormatConfig::default());
+        assert!(manager.matches_pattern("foo/main.rs", "*.rs"));
+        assert!(manager.matches_pattern("foo/main.rs", "regex:^foo/.*\\.rs$"));
+        assert!(!manager.matches_pattern("foo/main.txt", "regex:^foo/.*\\.rs$"));
+        assert!(!manager.matches_pattern("foo/main.rs", "regex:["));
+    }
+
+    #[test]
+    fn test_should_ignore_patterns() {
+        let manager = new_manager(FormatConfig {
+            enabled: true,
+            formatters: HashMap::new(),
+            defaults: FormatDefaults {
+                ignore_patterns: vec!["min.js".to_string(), "*.lock".to_string()],
+                preserve_manual_sections: true,
+            },
+        });
+
+        assert!(manager.should_ignore("vendor.min.js"));
+        assert!(manager.should_ignore("Cargo.lock"));
+        assert!(!manager.should_ignore("main.rs"));
+    }
+}

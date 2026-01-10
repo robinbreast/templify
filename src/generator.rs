@@ -17,6 +17,7 @@ pub struct FileGenerator {
     engine: TemplateEngine,
     manual_section_manager: ManualSectionManager,
     formatter_manager: Option<FormatterManager>,
+    template_suffixes: Vec<String>,
     dry_run: bool,
 }
 
@@ -30,12 +31,20 @@ impl FileGenerator {
             engine,
             manual_section_manager,
             formatter_manager: None, // Default to None, use with_formatter to set
+            template_suffixes: vec![".j2".to_string(), ".jinja2".to_string(), ".inj".to_string()],
             dry_run,
         }
     }
 
     pub fn with_formatter(mut self, formatter_manager: FormatterManager) -> Self {
         self.formatter_manager = Some(formatter_manager);
+        self
+    }
+
+    pub fn with_template_suffixes(mut self, template_suffixes: Vec<String>) -> Self {
+        if !template_suffixes.is_empty() {
+            self.template_suffixes = template_suffixes;
+        }
         self
     }
 
@@ -130,10 +139,15 @@ impl FileGenerator {
                 }
             };
 
-            let filename = rendered_filename
-                .strip_suffix(".j2")
-                .or_else(|| rendered_filename.strip_suffix(".inj"))
-                .unwrap_or(&rendered_filename);
+            if rendered_filename.trim().is_empty() {
+                info!(
+                    "Skipping file '{}' due to empty rendered filename",
+                    filename
+                );
+                return Ok(());
+            }
+
+            let filename = strip_template_suffix(&rendered_filename, &self.template_suffixes);
 
             let new_output_path = output_path.join(filename);
             self.generate_file(template_path, &new_output_path, context)?;
@@ -153,6 +167,14 @@ impl FileGenerator {
                     return Err(e);
                 }
             };
+
+            if !root_path && rendered_folder_name.trim().is_empty() {
+                info!(
+                    "Skipping folder '{}' due to empty rendered name",
+                    folder_name
+                );
+                return Ok(());
+            }
 
             let new_output_path = if root_path {
                 output_path.to_path_buf()
@@ -240,7 +262,7 @@ impl FileGenerator {
         }
 
         if let Some(ext) = template_path.extension() {
-            if ext == "j2" {
+            if ext == "j2" || ext == "jinja2" {
                 let rendered_content = self.engine.render_file(template_path, context)?;
 
                 // Validate manual sections
@@ -395,10 +417,6 @@ impl FileGenerator {
 }
 
 fn should_skip_file(path: &Path, root_template: &Path, filters: &FileFilters) -> bool {
-    if filters.include.is_empty() && filters.exclude.is_empty() {
-        return false;
-    }
-
     let rel = path.strip_prefix(root_template).unwrap_or(path);
     let rel_str = rel.to_string_lossy();
 
@@ -424,6 +442,35 @@ fn should_skip_file(path: &Path, root_template: &Path, filters: &FileFilters) ->
     false
 }
 
+fn strip_template_suffix(filename: &str, suffixes: &[String]) -> String {
+    let mut ordered = suffixes.to_vec();
+    ordered.sort_by_key(|s| std::cmp::Reverse(s.len()));
+
+    for suffix in ordered {
+        if filename.ends_with(&suffix) {
+            let stem = &filename[..filename.len() - suffix.len()];
+            if let Some(mapped) = map_special_suffix(&suffix) {
+                return format!("{}{}", stem, mapped);
+            }
+            return stem.to_string();
+        }
+    }
+
+    filename.to_string()
+}
+
+fn map_special_suffix(suffix: &str) -> Option<String> {
+    if !suffix.starts_with('_') {
+        return None;
+    }
+    let dot_index = suffix.rfind('.')?;
+    let ext = &suffix[1..dot_index];
+    if ext.is_empty() {
+        return None;
+    }
+    Some(format!(".{}", ext))
+}
+
 fn matches_pattern(name: &str, pattern: &str) -> bool {
     if let Some(regex_pattern) = pattern.strip_prefix("regex:") {
         if let Ok(re) = Regex::new(regex_pattern) {
@@ -439,4 +486,110 @@ fn matches_pattern(name: &str, pattern: &str) -> bool {
     }
 
     name == pattern
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ManualSectionConfig;
+    use crate::engine::TemplateEngine;
+    use serde_json::json;
+    use std::fs;
+    use std::path::Path;
+
+    fn new_generator() -> FileGenerator {
+        let engine = TemplateEngine::new();
+        let manual_section_manager = ManualSectionManager::new(ManualSectionConfig::default());
+        FileGenerator::new(engine, manual_section_manager, true)
+    }
+
+    #[test]
+    fn test_strip_foreach_prefix_present() {
+        let generator = new_generator();
+        let context = json!({"item": [1, 2]});
+        let result = generator.strip_foreach_prefix("_foreach_item_file.txt", &context);
+        assert_eq!(result, "file.txt");
+    }
+
+    #[test]
+    fn test_strip_foreach_prefix_missing_var() {
+        let generator = new_generator();
+        let context = json!({"other": [1, 2]});
+        let result = generator.strip_foreach_prefix("_foreach_item_file.txt", &context);
+        assert_eq!(result, "_foreach_item_file.txt");
+    }
+
+    #[test]
+    fn test_should_skip_file_include_and_exclude() {
+        let include_filters = FileFilters {
+            include: vec!["*.txt".to_string()],
+            exclude: Vec::new(),
+        };
+        let exclude_filters = FileFilters {
+            include: Vec::new(),
+            exclude: vec!["*.txt".to_string()],
+        };
+        let root = Path::new("templates");
+        let txt_path = Path::new("templates/file.txt");
+        let md_path = Path::new("templates/file.md");
+
+        assert!(!should_skip_file(txt_path, root, &include_filters));
+        assert!(should_skip_file(md_path, root, &include_filters));
+        assert!(should_skip_file(txt_path, root, &exclude_filters));
+    }
+
+    #[test]
+    fn test_matches_pattern_variants() {
+        assert!(matches_pattern("src/main.rs", "*.rs"));
+        assert!(matches_pattern("foo/bar.rs", "regex:^foo/.*\\.rs$"));
+        assert!(!matches_pattern("foo/bar.txt", "regex:^foo/.*\\.rs$"));
+        assert!(!matches_pattern("foo/bar.rs", "regex:["));
+    }
+
+    #[test]
+    fn test_strip_template_suffix_default() {
+        let suffixes = vec![".j2".to_string(), ".jinja2".to_string(), ".inj".to_string()];
+        assert_eq!(strip_template_suffix("foo.jinja2", &suffixes), "foo");
+        assert_eq!(strip_template_suffix("bar.inj", &suffixes), "bar");
+        assert_eq!(strip_template_suffix("plain.txt", &suffixes), "plain.txt");
+    }
+
+    #[test]
+    fn test_strip_template_suffix_special_extension() {
+        let suffixes = vec!["_c.j2".to_string(), ".j2".to_string()];
+        assert_eq!(strip_template_suffix("main_c.j2", &suffixes), "main.c");
+        assert_eq!(strip_template_suffix("lib.j2", &suffixes), "lib");
+    }
+
+    #[test]
+    fn test_inject_string_missing_capture_group() {
+        let generator = new_generator();
+        let dir = tempfile::tempdir().unwrap();
+        let template_path = dir.path().join("snippet.inj");
+        let content = "<!-- injection-pattern: demo -->\n^// INJECT HERE$\n<!-- injection-string-start -->INJECTED<!-- injection-string-end -->";
+        fs::write(&template_path, content).unwrap();
+
+        let result = generator.inject_string(&template_path, Some("// INJECT HERE"), &json!({}));
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_inject_string_replaces_capture_group() {
+        let generator = new_generator();
+        let dir = tempfile::tempdir().unwrap();
+        let template_path = dir.path().join("snippet.inj");
+        let content = "<!-- injection-pattern: demo -->\n(?P<injection>// INJECT HERE)\n<!-- injection-string-start -->INJECTED<!-- injection-string-end -->";
+        fs::write(&template_path, content).unwrap();
+
+        let result = generator
+            .inject_string(
+                &template_path,
+                Some("before\n// INJECT HERE\nafter"),
+                &json!({}),
+            )
+            .unwrap();
+
+        assert_eq!(result, "before\nINJECTED\nafter");
+    }
 }

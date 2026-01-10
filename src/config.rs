@@ -21,10 +21,19 @@ pub struct TemplateConfig {
     pub helpers: Vec<HelperConfig>,
 
     #[serde(default)]
+    pub data_helpers: Option<DataHelpersConfig>,
+
+    #[serde(default)]
     pub format: FormatConfig,
 
     #[serde(default)]
+    pub validation: ValidationConfig,
+
+    #[serde(default)]
     pub jinja_env: JinjaEnvConfig,
+
+    #[serde(default = "default_template_suffixes")]
+    pub template_suffixes: Vec<String>,
 
     pub schema: Option<String>,
 }
@@ -39,6 +48,10 @@ fn default_required_true() -> bool {
 
 fn default_auto_format() -> String {
     "auto".to_string()
+}
+
+fn default_template_suffixes() -> Vec<String> {
+    vec![".j2".to_string(), ".jinja2".to_string(), ".inj".to_string()]
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -121,6 +134,14 @@ pub struct HelperConfig {
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
+pub struct DataHelpersConfig {
+    #[serde(default)]
+    pub helpers: Vec<HelperConfig>,
+    #[serde(default)]
+    pub discovery_paths: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Default, Clone)]
 pub struct FormatConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -128,6 +149,49 @@ pub struct FormatConfig {
     pub formatters: HashMap<String, FormatterConfig>,
     #[serde(default)]
     pub defaults: FormatDefaults,
+}
+
+#[derive(Debug, Deserialize, Default, Clone)]
+pub struct ValidationConfig {
+    #[serde(default)]
+    pub validators: Vec<ValidatorSpec>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[serde(tag = "type")]
+pub enum ValidatorSpec {
+    #[serde(rename = "file_structure")]
+    FileStructure {
+        name: Option<String>,
+        #[serde(default)]
+        paths: Vec<String>,
+        #[serde(default)]
+        patterns: Vec<String>,
+        min: Option<usize>,
+        max: Option<usize>,
+    },
+    #[serde(rename = "json_schema")]
+    JsonSchema {
+        name: Option<String>,
+        schema: String,
+        target: String,
+    },
+    #[serde(rename = "gtest")]
+    Gtest {
+        name: Option<String>,
+        command: Option<String>,
+        #[serde(default)]
+        args: Vec<String>,
+        working_dir: Option<String>,
+    },
+    #[serde(rename = "custom")]
+    CustomCommand {
+        name: Option<String>,
+        command: String,
+        #[serde(default)]
+        args: Vec<String>,
+        working_dir: Option<String>,
+    },
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -261,4 +325,42 @@ pub fn parse_iteration(iterate: &str) -> Result<IterationInfo, ConfigError> {
         var: parts[0].trim().to_string(),
         expr: parts[1].trim().to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn test_parse_iteration_valid() {
+        let parsed = parse_iteration("item in items").unwrap();
+        assert_eq!(parsed.var, "item");
+        assert_eq!(parsed.expr, "items");
+    }
+
+    #[test]
+    fn test_parse_iteration_invalid() {
+        assert!(parse_iteration("item items").is_err());
+        assert!(parse_iteration("a in b in c").is_err());
+    }
+
+    #[test]
+    fn test_template_config_load_minimal() {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        writeln!(file, "templates:\n  - folder: templates\n    enabled: true").unwrap();
+
+        let config = TemplateConfig::load(file.path()).unwrap();
+        assert_eq!(config.templates.len(), 1);
+        assert!(config.flatten_data);
+    }
+
+    #[test]
+    fn test_template_config_load_invalid_yaml() {
+        let mut file = tempfile::NamedTempFile::new().unwrap();
+        write!(file, "templates: [").unwrap();
+
+        let result = TemplateConfig::load(file.path());
+        assert!(result.is_err());
+    }
 }

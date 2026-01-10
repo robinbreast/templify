@@ -8,6 +8,18 @@ pub struct TemplateEngine {
     newline_sequence: String,
 }
 
+fn format_render_error(err: minijinja::Error, template_str: &str) -> String {
+    if let Some(line) = err.line() {
+        let mut message = format!("{} (line {})", err, line);
+        let error_line = template_str.lines().nth(line - 1).unwrap_or("");
+        message.push('\n');
+        message.push_str(error_line);
+        return message;
+    }
+
+    err.to_string()
+}
+
 impl TemplateEngine {
     /// Creates a new TemplateEngine with default configuration.
     pub fn new() -> Self {
@@ -54,11 +66,87 @@ impl TemplateEngine {
             crate::filters::filter_screamingsnakecase,
         );
         env.add_filter("slugify", crate::filters::filter_slugify);
+        env.add_filter("normalize", crate::filters::filter_normalize);
+        env.add_filter("indent_custom", crate::filters::filter_indent_custom);
+        env.add_filter("remove_prefix", crate::filters::filter_remove_prefix);
+        env.add_filter("remove_suffix", crate::filters::filter_remove_suffix);
+        env.add_filter("wrap_text", crate::filters::filter_wrap_text);
+        env.add_filter("truncate_custom", crate::filters::filter_truncate_custom);
+        env.add_filter("regex_search", crate::filters::filter_regex_search);
+        env.add_filter("regex_findall", crate::filters::filter_regex_findall);
+        env.add_filter("quote_string", crate::filters::filter_quote_string);
+        env.add_filter("uppercase", crate::filters::filter_uppercase);
+        env.add_filter("lowercase", crate::filters::filter_lowercase);
+        env.add_filter("titlecase", crate::filters::filter_titlecase);
+        env.add_filter("default", crate::filters::filter_default);
+        env.add_filter("default_if_none", crate::filters::filter_default_if_none);
+        env.add_filter("contains", crate::filters::filter_contains);
+        env.add_filter("trim", crate::filters::filter_trim);
+        env.add_filter("trim_start", crate::filters::filter_trim_start);
+        env.add_filter("trim_end", crate::filters::filter_trim_end);
+        env.add_filter("startswith", crate::filters::filter_startswith);
+        env.add_filter("endswith", crate::filters::filter_endswith);
+        env.add_filter("replace", crate::filters::filter_replace);
+        env.add_filter("split", crate::filters::filter_split);
+        env.add_filter("join", crate::filters::filter_join);
+        env.add_filter("pad_start", crate::filters::filter_pad_start);
+        env.add_filter("pad_end", crate::filters::filter_pad_end);
+        env.add_filter("pad_left", crate::filters::filter_pad_left);
+        env.add_filter("pad_right", crate::filters::filter_pad_right);
+        env.add_filter("capitalize", crate::filters::filter_capitalize);
+        env.add_filter("remove", crate::filters::filter_remove);
+        env.add_filter("repeat", crate::filters::filter_repeat);
+        env.add_filter("reverse", crate::filters::filter_reverse);
+        env.add_filter("truncate", crate::filters::filter_truncate);
+        env.add_filter("slice", crate::filters::filter_slice);
+        env.add_filter("length", crate::filters::filter_length);
+        env.add_filter("first", crate::filters::filter_first);
+        env.add_filter("last", crate::filters::filter_last);
+        env.add_filter("sum", crate::filters::filter_sum);
+        env.add_filter("min", crate::filters::filter_min);
+        env.add_filter("max", crate::filters::filter_max);
+        env.add_filter("round", crate::filters::filter_round);
+        env.add_filter("avg", crate::filters::filter_avg);
+        env.add_filter("median", crate::filters::filter_median);
+        env.add_filter("unique_by", crate::filters::filter_unique_by);
+        env.add_filter("dict_merge", crate::filters::filter_dict_merge);
+        env.add_filter("merge_dicts", crate::filters::filter_merge_dicts);
+        env.add_filter("dict_keys", crate::filters::filter_dict_keys);
+        env.add_filter("dict_values", crate::filters::filter_dict_values);
+        env.add_filter("dict_items", crate::filters::filter_dict_items);
+        env.add_filter("zip_lists", crate::filters::filter_zip_lists);
+        env.add_filter("index_of", crate::filters::filter_index_of);
+        env.add_filter("intersection", crate::filters::filter_intersection);
+        env.add_filter("difference", crate::filters::filter_difference);
+        env.add_filter("union", crate::filters::filter_union);
+        env.add_filter("chunk", crate::filters::filter_chunk);
         env.add_filter("uuid_generate", crate::filters::filter_uuid_generate);
         env.add_filter("regex_replace", crate::filters::filter_regex_replace);
         env.add_filter("ternary", crate::filters::filter_ternary);
         env.add_filter("coalesce", crate::filters::filter_coalesce);
+        env.add_filter("type_name", crate::filters::filter_type_name);
+        env.add_filter("is_list", crate::filters::filter_is_list);
+        env.add_filter("is_dict", crate::filters::filter_is_dict);
+        env.add_filter("is_string", crate::filters::filter_is_string);
+        env.add_filter("is_number", crate::filters::filter_is_number);
+        env.add_filter("is_even", crate::filters::filter_is_even);
+        env.add_filter("is_odd", crate::filters::filter_is_odd);
         env.add_filter("hash_md5", crate::filters::filter_hash_md5);
+        env.add_filter("hash_sha256", crate::filters::filter_hash_sha256);
+        env.add_filter("b64encode", crate::filters::filter_b64encode);
+        env.add_filter("b64decode", crate::filters::filter_b64decode);
+        env.add_filter("random_string", crate::filters::filter_random_string);
+        env.add_filter("random_int", crate::filters::filter_random_int);
+        env.add_filter("abs_value", crate::filters::filter_abs_value);
+        env.add_filter("clamp", crate::filters::filter_clamp);
+        env.add_filter("bool_to_string", crate::filters::filter_bool_to_string);
+        env.add_filter("file_extension", crate::filters::filter_file_extension);
+        env.add_filter("file_basename", crate::filters::filter_file_basename);
+        env.add_filter("file_dirname", crate::filters::filter_file_dirname);
+        env.add_filter("safe_divide", crate::filters::filter_safe_divide);
+        env.add_filter("map_value", crate::filters::filter_map_value);
+        env.add_filter("get_attr", crate::filters::filter_get_attr);
+        env.add_filter("get_item", crate::filters::filter_get_item);
         env.add_filter("flatten", crate::filters::filter_flatten);
         env.add_filter("unique", crate::filters::filter_unique);
         env.add_filter("compact", crate::filters::filter_compact);
@@ -70,11 +158,28 @@ impl TemplateEngine {
         env.add_filter("format_yaml", crate::filters::filter_format_yaml);
         env.add_filter("format_number", crate::filters::filter_format_number);
         env.add_filter("format_bytes", crate::filters::filter_format_bytes);
+        env.add_filter(
+            "format_percentage",
+            crate::filters::filter_format_percentage,
+        );
         env.add_filter("format_date", crate::filters::filter_format_date);
+        env.add_filter("format_currency", crate::filters::filter_format_currency);
+        env.add_filter("format_ordinal", crate::filters::filter_format_ordinal);
+        env.add_filter("format_phone", crate::filters::filter_format_phone);
+        env.add_filter(
+            "format_xml_escape",
+            crate::filters::filter_format_xml_escape,
+        );
+        env.add_filter(
+            "format_sql_escape",
+            crate::filters::filter_format_sql_escape,
+        );
         env.add_filter("tojson", crate::filters::filter_tojson);
 
         // Register utility functions
         env.add_function("uuid_generate", crate::filters::filter_uuid_generate);
+        env.add_function("random_string", crate::filters::filter_random_string);
+        env.add_function("random_int", crate::filters::filter_random_int);
 
         Self {
             env,
@@ -99,14 +204,9 @@ impl TemplateEngine {
             .template_from_str(template_str)
             .map_err(|e| e.to_string())?;
 
-        let rendered = template.render(context).map_err(|e| {
-            if let Some(line) = e.line() {
-                let error_line = template_str.lines().nth(line - 1).unwrap_or("");
-                format!("{}\n{}", e, error_line)
-            } else {
-                format!("{}", e)
-            }
-        })?;
+        let rendered = template
+            .render(context)
+            .map_err(|e| format_render_error(e, template_str))?;
 
         let final_output = if self.newline_sequence != "\n" {
             rendered.replace('\n', &self.newline_sequence)
@@ -169,6 +269,8 @@ mod tests {
         let engine = TemplateEngine::new();
         let context: HashMap<String, String> = HashMap::new();
         let result = engine.render_string("Hello, {{ name }}!", &context);
-        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("line 1"));
+        assert!(err.contains("Hello, {{ name }}!"));
     }
 }

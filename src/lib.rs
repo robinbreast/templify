@@ -1,11 +1,23 @@
+//! templify - A Rust-based file generation engine using Jinja2 templates.
+//!
+//! Key features:
+//! - Jinja2 templates via `minijinja`
+//! - Manual section preservation across regenerations
+//! - Data helper loading (JSON/YAML/TOML)
+//! - Code formatting integration
+//! - Post-generation validation
+
 // Export public modules
 pub mod config;
+pub mod data_helpers;
 pub mod engine;
 pub mod filters;
 pub mod formatting;
 pub mod generator;
 pub mod iteration;
 pub mod manual_sections;
+pub mod manual_sections_cli;
+pub mod utils;
 
 // Re-export commonly used types
 pub use config::{ManualSectionConfig, TemplateConfig};

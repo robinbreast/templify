@@ -13,6 +13,10 @@ categories = ["template-engine"]
 name = "yagen"
 path = "src/main.rs"
 
+[[bin]]
+name = "manual-sections"
+path = "src/bin/manual-sections.rs"
+
 
 [dependencies]
 minijinja = { version = "=2.14.0", features = ["custom_syntax"] }
@@ -31,6 +35,9 @@ toml = "0.8"
 chrono = { version = "0.4", features = ["clock"] }
 humansize = "2"
 md5 = "0.7"
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
 num-format = "0.4"
 jsonschema = "0.17"
 walkdir = "2.4"

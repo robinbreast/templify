@@ -47,6 +47,14 @@ Run the generator using a config file and a data file:
 yagen -c config.yaml -d data.json
 ```
 
+### Manual Sections CLI
+
+`templify` also ships a standalone `manual-sections` command for backup/restore/reporting:
+
+```bash
+manual-sections backup --input ./output --backup manual_sections.json
+```
+
 **Options:**
 - `-c, --config <FILE>`: Path to YAML config file.
 - `-d, --data <FILE>`: Path to JSON data file.
@@ -72,6 +80,31 @@ extra_data:
 manual_sections:
   start_marker: "MANUAL SECTION START"
   end_marker: "MANUAL SECTION END"
+
+# Validation checks after generation
+validation:
+  validators:
+    - type: "file_structure"
+      name: "expected-output"
+      paths:
+        - "output/config.json"
+        - "output/src/main.rs"
+      patterns:
+        - "output/**/*.rs"
+      min: 1
+    - type: "json_schema"
+      name: "config-schema"
+      schema: "schemas/config.schema.json"
+      target: "output/config.json"
+    - type: "gtest"
+      name: "cpp-tests"
+      working_dir: "output/build"
+      args: ["-V"]
+    - type: "custom"
+      name: "lint"
+      command: "cargo"
+      args: ["clippy", "--all-targets", "--all-features"]
+      working_dir: ".."
 
 # Configure Code Formatting
 format:
@@ -113,19 +146,38 @@ templates:
 
 ### Filters
 
-`templify` provides many built-in filters:
+`templify` provides many built-in filters (aligned with `pytemplify`):
 
 **String Filters:**
-- `camelcase`: `foo_bar` -> `fooBar`
-- `pascalcase`: `foo_bar` -> `FooBar`
-- `snakecase`: `FooBar` -> `foo_bar`
-- `kebabcase`: `FooBar` -> `foo-bar`
-- `screamingsnakecase`: `fooBar` -> `FOO_BAR`
+- `camelcase`, `pascalcase`, `snakecase`, `kebabcase`, `screamingsnakecase`, `normalize`, `slugify`
+- `indent_custom`, `remove_prefix`, `remove_suffix`, `wrap_text`, `truncate_custom`
+- `regex_replace`, `regex_search`, `regex_findall`, `quote_string`
+- `uppercase`, `lowercase`, `titlecase`, `capitalize`, `trim`, `trim_start`, `trim_end`
+- `startswith`, `endswith`, `replace`, `split`, `join`, `pad_start`, `pad_end`, `pad_left`, `pad_right`
+- `remove`, `repeat`, `reverse`, `truncate`, `slice`
+
+**Collection Filters:**
+- `flatten`, `unique`, `unique_by`, `chunk`, `pluck`, `where`, `sort_by`, `group_by`
+- `merge_dicts`, `dict_merge`, `dict_keys`, `dict_values`, `dict_items`, `zip_lists`, `index_of`
+- `compact`, `intersection`, `difference`, `union`
+
+**Formatting Filters:**
+- `format_number`, `format_bytes`, `format_percentage`, `format_date`, `format_currency`
+- `format_ordinal`, `format_phone`, `format_json`, `format_yaml`, `format_xml_escape`, `format_sql_escape`
 
 **Utility Filters:**
-- `uuid_generate`: Generates a UUID.
-    - `{{ uuid_generate() }}`: Random v4 UUID.
-    - `{{ "my-seed" | uuid_generate }}`: Deterministic v5 UUID based on seed.
+- `default`, `default_if_none`, `coalesce`, `ternary`, `type_name`
+- `is_list`, `is_dict`, `is_string`, `is_number`, `is_even`, `is_odd`
+- `hash_md5`, `hash_sha256`, `b64encode`, `b64decode`
+- `random_string`, `random_int`, `uuid_generate`
+- `abs_value`, `clamp`, `bool_to_string`, `file_extension`, `file_basename`, `file_dirname`
+- `safe_divide`, `map_value`, `get_attr`, `get_item`
+
+**Globals Access:**
+- `globals.*` and `gg.*` both point to global values.
+
+**Data Helpers Config Alias:**
+- `data_helpers.helpers` and `data_helpers.discovery_paths` map to the existing file-based helpers loader.
 
 ### Manual Sections
 
